@@ -1,0 +1,7 @@
+numpy==1.19.2
+Twisted==20.3.0
+opencv_python==4.4.0.44
+qimage2ndarray==1.8.3
+matplotlib==3.3.2
+autobahn_rce==0.6.0.5
+PySide2==5.15.2
