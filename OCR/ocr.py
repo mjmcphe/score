@@ -621,10 +621,6 @@ class ocr_worker(QtCore.QThread):
 class create_mode_window(QWidget):
 	def __init__(self, settings):
 		QWidget.__init__(self)
-		try:
-			shutil.rmtree(_application_path + "\\temp")
-		except OSError as e:
-			pass
 
 		self.createmode = -1
 		self.font = settings["font"]
@@ -784,6 +780,10 @@ class create_mode_rename(QWidget):
 class main_app(QWidget):
 	def __init__(self):
 		QWidget.__init__(self)
+		try:
+			shutil.rmtree(_application_path + "\\temp")
+		except OSError as e:
+			pass
 		self.ocrworker = None
 		self.res = [1440, 720]
 		self.video_size = (750, 360)
