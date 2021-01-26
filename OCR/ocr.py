@@ -194,9 +194,9 @@ class ocr_worker(QtCore.QThread):
 
 		self.font = settings["font"]
 		self.decimal_mode = settings["decimal_mode"]
-		self.digits = [None] * 10
+		self.digits = [None] * 14
 		self.clock = [0] * 4
-		self.score = [0] * 6
+		self.score = [0] * 10
 		self.clockjson = {
 			"method": "clock",
 			"data": ""
@@ -205,14 +205,16 @@ class ocr_worker(QtCore.QThread):
 			"method": "score",
 			"data": {
 				"home": {
-					"score": ""
+					"score": "",
+					"fouls": ""
 				}, "away": {
-					"score": ""
+					"score": "",
+					"fouls": ""
 				}
 			}
 		}
 		self.last = [0] * 3
-		self.rect_colors = [(0,255,255), (0,255,255), (0,255,255), (0,255,255), (0,255,0), (0,255,0), (0,255,0), (0,0,255), (0,0,255), (0,0,255)]
+		self.rect_colors = [(0,255,255), (0,255,255), (0,255,255), (0,255,255), (0,255,0), (0,255,0), (0,255,0), (0,0,255), (0,0,255), (0,0,255), (255,0,0), (255,0,0), (0,69,255), (0,69,255)]
 
 		self.reference_images = [[0], [0], [0], [0], [0], [0], [0], [0], [0], [0]]
 		self.ref_images_inc = [0] * 10
@@ -364,6 +366,14 @@ class ocr_worker(QtCore.QThread):
 				cv2.putText(canvas, str(index + 1), (self.coords[str(index)]["x1"], text_y_pos), cv2.FONT_ITALIC, 1, (color), 2)
 				cv2.rectangle(canvas, (self.coords[str(index)]["x1"], self.coords[str(index)]["y1"]), (self.coords[str(index)]["x2"], self.coords[str(index)]["y2"]), (color), 2)
 
+	def get_thresh(self, image):
+		image = thresholding(image, 120, 255)
+		image = remove_noise(image)
+		image = dilate(image)
+		image = erode(image)
+
+		return image
+
 	def run(self):
 
 		cap = cv2.VideoCapture(self.cam_index)
@@ -457,10 +467,7 @@ class ocr_worker(QtCore.QThread):
 					if self.colorcount == 2:
 						frame = cv2.bitwise_or(cv2.inRange(img_HSV, lower_color[0], upper_color[0]), cv2.inRange(img_HSV, lower_color[1], upper_color[1]))
 
-					frame = thresholding(frame, 120, 255)
-					frame = remove_noise(frame)
-					frame = dilate(frame)
-					frame = erode(frame)
+					frame = self.get_thresh(frame)
 
 					if main.show_thresh:
 						img_disp = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
@@ -489,7 +496,7 @@ class ocr_worker(QtCore.QThread):
 							self.clock[i] = digit
 
 					self.frame_counter += 1
-					for i in range(4, 10):
+					for i in range(4, 14):
 						self.draw_rect(img_disp, i, self.rect_colors[i])
 
 						self.digits[i] = frame[self.coords[str(i)]["y1"]:self.coords[str(i)]["y2"], self.coords[str(i)]["x1"]:self.coords[str(i)]["x2"]]
@@ -554,14 +561,17 @@ class ocr_worker(QtCore.QThread):
 							cv2.setMouseCallback("Update Digit " + str(self.draw_box["current_digit"] + 1), self.mouse_hover_coordinates)
 							cv2.imshow("Update Digit " + str(self.draw_box["current_digit"] + 1), img_disp)
 					else:
-						for i in range(10):
+						for i in range(14):
 							cv2.destroyWindow("Update Digit " + str(i + 1))
 
 					self.scorejson["data"]["home"]["score"] = str(self.score[0]) + str(self.score[1]) + str(self.score[2])
 					self.scorejson["data"]["away"]["score"] = str(self.score[3]) + str(self.score[4]) + str(self.score[5])
 
+					self.scorejson["data"]["home"]["fouls"] = str(self.score[6]) + str(self.score[7])
+					self.scorejson["data"]["away"]["fouls"] = str(self.score[8]) + str(self.score[9])
+
 					border_digits = self.digits
-					for i in range(10):
+					for i in range(14):
 						bordersize = 1
 						borderleft = 1
 						if cv2.countNonZero(border_digits[i]) == 0:
@@ -571,15 +581,17 @@ class ocr_worker(QtCore.QThread):
 						if (border_digits[i].shape[1] == 1):
 							borderleft = 4
 
-						if i == 7:
+						if i == 7 or i == 12:
 							borderleft += 5
 
 						border_digits[i] = cv2.copyMakeBorder(border_digits[i], top=bordersize, bottom=bordersize, left=borderleft, right=bordersize, borderType=cv2.BORDER_CONSTANT, value=(0,0,0))
 
 					concat_clock = cv2.hconcat([border_digits[0], border_digits[1], border_digits[2], border_digits[3]])
 					concat_score = cv2.hconcat([border_digits[4], border_digits[5], border_digits[6], border_digits[7], border_digits[8], border_digits[9]])
+					concat_foul = cv2.hconcat([border_digits[10], border_digits[11], border_digits[12], border_digits[13]])
 					main.display_webcam_feed(concat_clock, 0)
 					main.display_webcam_feed(concat_score, 1)
+					main.display_webcam_feed(concat_foul, 2)
 					if self.createmode <= -1:
 
 						if (self.clock[1] != "" and self.clock[2] != "" and self.clock[3] == ""):
@@ -587,13 +599,13 @@ class ocr_worker(QtCore.QThread):
 						else:
 							self.clockjson["data"]=(str(self.clock[0]) + str(self.clock[1]) + ":" + str(self.clock[2]) + str(self.clock[3]))
 
-						main.set_clock_text(self.clockjson["data"] + timeout_string + " Home " + self.scorejson["data"]["home"]["score"] + " - " + self.scorejson["data"]["away"]["score"] + " Away")
+						main.set_clock_text(self.clockjson["data"] + timeout_string + " Home " + self.scorejson["data"]["home"]["score"] + " - " + self.scorejson["data"]["away"]["score"] + " Away" + " (Fouls: " + self.scorejson["data"]["home"]["fouls"] + " - " + self.scorejson["data"]["away"]["fouls"] + ")")
 
 						if last_clock != self.clockjson["data"]:
 							last_clock = self.clockjson["data"]
 
 							if (self.clock[0] == "" and self.clock[1] == 1 and self.clock[2] == 0 and self.clock[3] == 0) or (self.clock[0] == "" and self.clock[1] == 0 and self.clock[2] != "" and self.clock[3] != ""):
-								timeout_string = " (Timeout)"
+								#timeout_string = " (Timeout)"
 								if self.send_timeout:
 									main.wsworker.send(json.dumps(self.clockjson))
 							else:
@@ -790,7 +802,7 @@ class main_app(QWidget):
 		self.section_size = [(350, 90), (350, 60), (350, 60)]
 		self.digit_size = (60, 100)
 		self.small_window_width = 200
-		self.coords_grid_labels = ["Clock *0:00", "Clock 0*:00", "Clock 00:*0", "Clock 00:0*", "Home Score *00", "Home Score 1*0", "Home Score 10*", "Away Score *00", "Away Score 1*0", "Away Score 10*", ]
+		self.coords_grid_labels = ["Clock *0:00", "Clock 0*:00", "Clock 00:*0", "Clock 00:0*", "Home Score *00", "Home Score 1*0", "Home Score 10*", "Away Score *00", "Away Score 1*0", "Away Score 10*", "Home Foul *0", "Home Foul 1*", "Away Foul *0", "Away Foul 1*", ]
 		self.temp_font = "temp"
 
 		self.ref_images_inc = []
@@ -872,8 +884,8 @@ class main_app(QWidget):
 		self.main_layout.addWidget(self.font_input, 5, 4, 1, 1)
 		self.main_layout.addWidget(self.font_gen_button, 5, 5, 1, 1)
 		self.main_layout.addWidget(self.reload_digits_button, 5, 6, 1, 1)
-		self.main_layout.addWidget(self.thresh_check, 23, 0, 1, 1)
-		self.main_layout.addWidget(self.send_button, 23, 6, 1, 1)
+		self.main_layout.addWidget(self.thresh_check, 27, 0, 1, 1)
+		self.main_layout.addWidget(self.send_button, 27, 6, 1, 1)
 
 
 		self.coords_grid = []
@@ -887,7 +899,7 @@ class main_app(QWidget):
 
 		self.coords_grid.append([QLabel(""), QLabel("X1"), QLabel("X2"), QLabel("Y1"), QLabel("Y2")])
 
-		for i in range(10):
+		for i in range(14):
 			self.coords_grid.append([QLabel(self.coords_grid_labels[i]), QLineEdit(u"" + str(self.coords[str(i)]["x1"]) + ""), QLineEdit(u"" + str(self.coords[str(i)]["x2"]) + ""), QLineEdit(u"" + str(self.coords[str(i)]["y1"]) + ""), QLineEdit(u"" + str(self.coords[str(i)]["y2"]) + ""), QPushButton("Draw Digit")])
 			self.ocr_live_buttons.append(self.coords_grid[i + 6][5])
 
